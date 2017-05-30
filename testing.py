@@ -1,5 +1,5 @@
 #
-#  This program allows to read the Serial data stream from the Arduino.
+#  TESTING (This program allows to read the Serial data stream from the Arduino.)
 #
 
 import serial
@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
-### TESTING
+
 BUFFER_SIZE = 100
 
 def serial_com():
@@ -37,29 +37,20 @@ def serial_com():
 	for line in data:
 		if line.find('StartUp')>0:
 			line = line[line.find('StartUp',beg=0)+10:]
-		#if (np.array(line)=='StartUp').any():
-			#ist +=1
 		lines.append(np.fromstring(line,dtype=np.uint8))
-	#print((line),np.sum(np.array(line)=='StartUp'))
-	print('StartUp',ist)
-		
-	lines = np.array(lines)
-	print('lines',lines.shape)
-	lines = lines.flatten()
-	print('lines',lines.shape)
-	print('decode done')
+	lines = np.array(lines).flatten()
 	
 	foundBeginingOfFrame = 0
 	result = []
 	for i in np.arange(0,len(lines)-1,2):
-		#if foundBeginingOfFrame==0:
-		if(lines[i]>127):
-			#print('foundBeginingOfFrame')
-			foundBeginingOfFrame = 1
-			##extract one sample from 2 bytes
-			intout = np.uint16(np.uint16(lines[i] & 127)*128)
-			intout = intout + np.uint16(lines[i+1])
-			result.append(intout)
+		if foundBeginingOfFrame==0:
+			if(lines[i]>127):
+				#print('foundBeginingOfFrame')
+				foundBeginingOfFrame = 1
+				##extract one sample from 2 bytes
+				intout = np.uint16(np.uint16(lines[i] & 127)*128)
+				intout = intout + np.uint16(lines[i+1])
+				result.append(intout)
 		else:
 			##extract one sample from 2 bytes
 			intout = np.uint16(np.uint16(lines[i] & 127)*128);
@@ -67,11 +58,12 @@ def serial_com():
 			result.append(intout)
 	return result
 
-# get the last line from serial port
+# get the last 10s from serial port
 lines = serial_com()
 #print(lines)
 print('done')
 
+# plot the output from serial port
 fig = plt.figure()
 ax = fig.add_subplot(111)
 ax.plot(lines)
