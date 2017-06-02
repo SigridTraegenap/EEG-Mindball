@@ -82,7 +82,7 @@ class PlottingDataMonitor(QMainWindow):
 	def create_arenaplot(self, xlabel, ylabel="Player "+color1, xlim=[-1,1], ylim=[-1,1], curve_style=None):
 		plot = pg.PlotWidget(background=QColor("#217300"))
 		if curve_style is not None:
-			curve = plot.plot(symbol=curve_style,antialias=True, symbolSize=15, symbolBrush='w')
+			curve = plot.plot(symbol=curve_style, antialias=True, symbolSize=15, symbolBrush='w')
 		else:
 			curve = plot.plot(antialias=True)
 		plot.setLabel('left', ylabel)
@@ -90,7 +90,18 @@ class PlottingDataMonitor(QMainWindow):
 		plot.setXRange(xlim[0], xlim[1])
 		plot.setYRange(ylim[0], ylim[1])
 		plot.replot()
-
+		
+		spi = pg.ScatterPlotItem(size=15, pen=pg.mkPen(None), brush=pg.mkBrush(255,255,255,0))
+		spi.addPoints([{'pos' : [0,0], 'data' : 1, 'pen' : 'w'}])
+		plot.addItem(spi)
+		
+		central_line = pg.GraphItem()
+		plot.addItem(central_line)
+		pos = np.array([[0.,-1.],[0.,1.],[-1.,0.2],[-0.85,0.2],[-0.85,-0.2],[-1.,-0.2],[1,0.2],[0.85,0.2],[0.85,-0.2],[1,-0.2]])
+		adj = np.array([[0,1],[2,3],[3,4],[4,5],[6,7],[7,8],[8,9]])
+		lines = np.array([(255,255,255,255,1)]*7,dtype=[('red',np.ubyte),('green',np.ubyte),('blue',np.ubyte),('alpha',np.ubyte),('width',float)])
+		central_line.setData(pos=pos,adj=adj,pen=lines,size=0.1)
+		
 		return plot, curve
 	
 	def create_status_bar(self):
@@ -109,8 +120,8 @@ class PlottingDataMonitor(QMainWindow):
 
 		## Plot
 		##
-		self.plot, self.curve = self.create_plot('Time', 'Signal', [0,5,1], [0,1000,200])
-		self.plot_fft, self.curve_fft = self.create_plot('Time', 'FFt', [0,75,1], [0,0.01,0.002])
+		self.plot, self.curve = self.create_plot('Time', 'Signal', [0,5], [0,1000])
+		self.plot_fft, self.curve_fft = self.create_plot('Frequency', 'FFt', [0,75], [0,0.01])
 		
 		plot_layout = QVBoxLayout()
 		plot_layout.addWidget(self.plot)
@@ -121,7 +132,7 @@ class PlottingDataMonitor(QMainWindow):
 		
 		### Arena
 		###
-		self.plot_arena, self.curve_arena = self.create_arenaplot(' ', 'Y', [-1,1,0.2], [-1,1,0.2], curve_style='o')
+		self.plot_arena, self.curve_arena = self.create_arenaplot(' ', 'Y', [-1,1,0], [-1,1,0], curve_style='o')
 		
 		plot_layout_arena = QHBoxLayout()
 		plot_layout_arena.addWidget(self.plot_arena)
