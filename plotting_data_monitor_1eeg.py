@@ -49,7 +49,7 @@ class PlottingDataMonitor(QMainWindow):
 		## init arena stuff
 		self.ball_coordx = 0.
 		self.ball_coordy = 0.
-		self.tuning_factor = 0.1
+		self.tuning_factor = 0.5
 		self.text_html = '<div style="text-align: center"><span style="color: #FFF; font-size: 40pt">Goal</span><br><span style="color: #FFF; font-size: 40pt; text-align: center"> {} is winner </span></div>'
 		self.show_one_item = False
 		self.winner_text = None
@@ -207,6 +207,15 @@ class PlottingDataMonitor(QMainWindow):
 		self.ball_coordx, self.ball_coordy = 0,0
 		self.curve_arena.setData([self.ball_coordx], [self.ball_coordy])
 	
+	def reset_signal(self):
+		""" empty list of signal values"""
+		self.livefeed.updated_list = False
+		self.livefeed.list_data = []
+		self.curve.setData([], [])
+		self.curve_fft.setData([], [])
+		self.plot.replot()
+		
+	
 	def on_start(self):
 		""" Start the monitor: com_monitor thread and the update
 			timer
@@ -216,6 +225,7 @@ class PlottingDataMonitor(QMainWindow):
 		
 		if self.show_one_item is True:
 			self.reset_arena()
+			self.reset_signal()
 		
 		self.data_q = Queue.Queue()
 		self.error_q = Queue.Queue()
