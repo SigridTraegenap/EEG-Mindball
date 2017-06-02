@@ -14,18 +14,19 @@ import pyqtgraph as pg
 import Queue
 
 from com_monitor import ComMonitorThread
-#from eblib.serialutils import full_port_name, enumerate_serial_ports
 from libs.utils import get_all_from_queue, get_item_from_queue
 from libs.decode import decode_output
 from livedatafeed import LiveDataFeed
 
+## plotting parameters
 color1 = "limegreen"
 color2 = "magenta"
 width_signal = 5
+time_axis_range = 2 ## in s
 
+#fixes to white background and black labels
 pg.setConfigOption('background', 'w')
 pg.setConfigOption('foreground', 'k')
-#fixes to white background and black labels
 
 
 class PlottingDataMonitor(QMainWindow):
@@ -45,9 +46,11 @@ class PlottingDataMonitor(QMainWindow):
 		self.create_main_frame()
 		self.create_status_bar()
 		
+		## spectrum boundaries
 		self.x_low = 0.1
 		self.x_high = 3
 		
+		## init arena stuff
 		self.ball_coordx = 0.
 		self.ball_coordy = 0.
 		self.tuning_factor = 0.1
@@ -315,7 +318,7 @@ class PlottingDataMonitor(QMainWindow):
 			xdata = [s[0] for s in self.temperature_samples]
 			ydata = [s[1] for s in self.temperature_samples]
 			
-			self.plot.setXRange(max(0,xdata[-1]-5), max(5, xdata[-1]))
+			self.plot.setXRange(max(0,xdata[-1]-time_axis_range), max(time_axis_range, xdata[-1]))
 			self.curve.setData(xdata, ydata, _CallSync='off')
 			
 			# plot fft of port 1
