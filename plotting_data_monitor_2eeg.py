@@ -91,23 +91,14 @@ class PlottingDataMonitor(QMainWindow):
 	def create_arenaplot(self, xlabel, ylabel="Player "+color1, xlim=[-1,1], ylim=[-1,1], curve_style=None):
 		plot = pg.PlotWidget(background=QColor("#217300"))
 		if curve_style is not None:
-			curve = plot.plot(symbol=curve_style,antialias=True, symbolSize=15)
-			#brush = QBrush(QColor('limegreen'))
-			#curve.setBrush(brush)
+			curve = plot.plot(symbol=curve_style,antialias=True, symbolSize=15, symbolBrush='w')
 		else:
 			curve = plot.plot(antialias=True)
 		plot.setLabel('left', ylabel)
 		plot.setLabel('bottom', xlabel)
 		plot.setXRange(xlim[0], xlim[1])
 		plot.setYRange(ylim[0], ylim[1])
-
-		#plot.setCanvasBackground(Qt.black)
 		plot.replot()
-		
-		pen = QPen(QColor(color1))
-		#pen.setWidth(1.5)
-		#setting this width increases also fft width - do not use 
-		curve.setPen(pen)
 
 		return plot, curve
 
