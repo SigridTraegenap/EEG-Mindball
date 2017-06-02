@@ -11,14 +11,21 @@ import numpy as np
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 import pyqtgraph as pg
-#import PyQt4.Qwt5 as Qwt
 import Queue
 
 from com_monitor import ComMonitorThread
 from libs.utils import get_all_from_queue, get_item_from_queue
 from libs.decode import decode_output
 from livedatafeed import LiveDataFeed
-#from nfft import nfft
+
+
+color1 = "limegreen"
+width_signal = 5
+time_axis_range = 2 ## in s
+
+pg.setConfigOption('background', 'w')
+pg.setConfigOption('foreground', 'k')
+#fixes to white background and black labels
 
 
 class PlottingDataMonitor(QMainWindow):
@@ -35,23 +42,21 @@ class PlottingDataMonitor(QMainWindow):
 		self.create_main_frame()
 		self.create_status_bar()
 		
+		## spectrum boundaries
 		self.x_low = 0.1
 		self.x_high = 3
 		
-		#self.ball_coordx = [0.]
-		#self.ball_coordy = [0.]
-		#self.tuning_factor = 1.
-		#self.text_html = '<div style="text-align: center"><span style="color: #FFF; font-size: 50pt">Goal</span><br><span style="color: #FF0; font-size: 50pt;"> {} is winner </span></div>'
-		#self.show_one_item = False
+		## init arena stuff
+		self.ball_coordx = 0.
+		self.ball_coordy = 0.
+		self.tuning_factor = 0.1
+		self.text_html = '<div style="text-align: center"><span style="color: #FFF; font-size: 40pt">Goal</span><br><span style="color: #FFF; font-size: 40pt; text-align: center"> {} is winner </span></div>'
+		self.show_one_item = False
+		self.winner_text = None
 	
-	def create_plot(self, xlabel, ylabel, xlim, ylim, curve_style=None, ncurves=1):
+	def create_plot(self, xlabel, ylabel, xlim, ylim, ncurves=1):
 		plot = pg.PlotWidget()
-		if curve_style is not None:
-			curve = plot.plot(symbol=curve_style,antialias=True, symbolSize=15)
-			brush = QBrush(QColor('limegreen'))
-			curve.setBrush(brush)
-		else:
-			curve = plot.plot(antialias=True)
+		curve = plot.plot(antialias=True)
 		curve.setPen((200,200,100))
 		plot.setLabel('left', ylabel)
 		plot.setLabel('bottom', xlabel)
@@ -61,7 +66,7 @@ class PlottingDataMonitor(QMainWindow):
 		#plot.setCanvasBackground(Qt.black)
 		plot.replot()
 		
-		pen = QPen(QColor('limegreen'))
+		pen = QPen(QColor(color1))
 		#pen.setWidth(0.9)
 		curve.setPen(pen)
 		
@@ -73,7 +78,30 @@ class PlottingDataMonitor(QMainWindow):
 			return plot, curve, curve2
 		else:
 			return plot, curve
+	
+	def create_arenaplot(self, xlabel, ylabel="Player "+color1, xlim=[-1,1], ylim=[-1,1], curve_style=None):
+		plot = pg.PlotWidget(background=QColor("#217300"))
+		if curve_style is not None:
+			curve = plot.plot(symbol=curve_style,antialias=True, symbolSize=15)
+			#brush = QBrush(QColor(color1))
+			#curve.setBrush(brush)
+		else:
+			curve = plot.plot(antialias=True)
+		plot.setLabel('left', ylabel)
+		plot.setLabel('bottom', xlabel)
+		plot.setXRange(xlim[0], xlim[1])
+		plot.setYRange(ylim[0], ylim[1])
 
+		#plot.setCanvasBackground(Qt.black)
+		plot.replot()
+		
+		pen = QPen(QColor(color1))
+		#pen.setWidth(1.5)
+		#setting this width increases also fft width - do not use 
+		curve.setPen(pen)
+
+		return plot, curve
+	
 	def create_status_bar(self):
 		self.status_text = QLabel('Monitor idle')
 		self.statusBar().addWidget(self.status_text, 1)
@@ -91,7 +119,7 @@ class PlottingDataMonitor(QMainWindow):
 		## Plot
 		##
 		self.plot, self.curve = self.create_plot('Time', 'Signal', [0,5,1], [0,1000,200])
-		self.plot_fft, self.curve_fft = self.create_plot('Time', 'FFt', [0,5,1], [0,0.01,0.002])
+		self.plot_fft, self.curve_fft = self.create_plot('Time', 'FFt', [0,75,1], [0,0.01,0.002])
 		
 		plot_layout = QVBoxLayout()
 		plot_layout.addWidget(self.plot)
@@ -102,7 +130,7 @@ class PlottingDataMonitor(QMainWindow):
 		
 		### Arena
 		###
-		self.plot_arena, self.curve_arena = self.create_plot('x', 'y', [-1,1,0.2], [-1,1,0.2], curve_style='o')
+		self.plot_arena, self.curve_arena = self.create_arenaplot(' ', 'Y', [-1,1,0.2], [-1,1,0.2], curve_style='o')
 		
 		plot_layout_arena = QHBoxLayout()
 		plot_layout_arena.addWidget(self.plot_arena)
@@ -170,13 +198,24 @@ class PlottingDataMonitor(QMainWindow):
 		
 		self.status_text.setText('Monitor idle')
 	
+	def reset_arena(self):
+		"""bring ball back to center, remove winner sign"""
+		#self.plot_arena.clear()
+		self.plot_arena.removeItem(self.winner_text)
+		self.show_one_item = False
+		
+		self.ball_coordx, self.ball_coordy = 0,0
+		self.curve_arena.setData([self.ball_coordx], [self.ball_coordy])
+	
 	def on_start(self):
 		""" Start the monitor: com_monitor thread and the update
 			timer
 		"""
 		if self.com_monitor is not None:
 			return
-
+		
+		if self.show_one_item is True:
+			self.reset_arena()
 		
 		self.data_q = Queue.Queue()
 		self.error_q = Queue.Queue()
@@ -199,10 +238,13 @@ class PlottingDataMonitor(QMainWindow):
 		
 		self.timer = QTimer()
 		self.connect(self.timer, SIGNAL('timeout()'), self.on_timer)
+		update_freq = 1000. #Hz
+		self.timer.start(1000.0 / update_freq) #ms
 		
-		update_freq = 1
-		if update_freq > 0:
-			self.timer.start(1.0 / update_freq) #ms
+		self.timer_plot = QTimer()
+		self.connect(self.timer_plot, SIGNAL('timeout()'), self.on_timer_plot)
+		update_freq = 10. #Hz
+		self.timer_plot.start(1000.0 / update_freq) #ms
 		
 		self.status_text.setText('Monitor running')
 		
@@ -211,53 +253,61 @@ class PlottingDataMonitor(QMainWindow):
 			is fired.
 		"""
 		self.read_serial_data()
+		if self.livefeed.has_new_data:
+			self.livefeed.append_data(self.livefeed.read_data())
+	
+	def on_timer_plot(self):
 		self.update_monitor()
 
+	
 	def update_monitor(self):
 		""" Updates the state of the monitor window with new 
 			data. The livefeed is used to find out whether new
 			data was received since the last update. If not, 
 			nothing is updated.
 		"""
-		if self.livefeed.has_new_data:
-			data = self.livefeed.read_data()
-			
-			self.temperature_samples.append(
-				(data['timestamp'], data['temperature']))
-			if len(self.temperature_samples) > 1000:
-				self.temperature_samples.pop(0)
+		update1 = False
+		if self.livefeed.updated_list:
+			self.temperature_samples = self.livefeed.read_list()
 			
 			xdata = [s[0] for s in self.temperature_samples]
 			ydata = [s[1] for s in self.temperature_samples]
 			
-			self.plot.setXRange(max(0,xdata[-1]-5), max(5, xdata[-1]))
-			self.curve.setData(xdata, ydata)
-			self.plot.replot()
+			self.plot.setXRange(max(0,xdata[-1]-time_axis_range), max(time_axis_range, xdata[-1]))
+			self.curve.setData(xdata, ydata, _CallSync='off')
 			
 			# plot fft of port 1
+			#
 			delta = np.array(xdata[1:])-np.array(xdata[:-1])
-			#print(np.nanmean(delta),np.nanstd(delta))
+			#print(np.nanmean(delta))#,np.nanstd(delta))
 			n = len(ydata)
 			fft1 = np.abs(np.fft.rfft(ydata))
 			fft1 = (fft1/np.sum(fft1))[1:]
 			x = np.fft.rfftfreq(n,d=np.nanmean(delta))[1:]
-			
-			self.plot_fft.setXRange(x[0], x[-1])
-			#self.plot_fft.setAxisScale(Qwt.QwtPlot.xBottom, x[0], x[-1])
+
 			self.curve_fft.setData(x,fft1)
 			self.plot_fft.replot()
 			
 			power_alpha = np.sum(fft1[(x>self.x_low)*(x<self.x_high)])
-			print(power_alpha)
+			#print(power_alpha)
 			
 			if n>999:
-				ball_coordx = [power_alpha] 
-				ball_coordy = [0]
-			else:
-				ball_coordx = [0]
-				ball_coordy = [0]
-			self.curve_arena.setData(ball_coordx,ball_coordy)
-			self.plot_arena.replot()
+				#print((power_alpha)*self.tuning_factor)
+				self.ball_coordx += (power_alpha)*self.tuning_factor
+				self.ball_coordy += np.random.normal(scale=0.05)
+
+			self.curve_arena.setData([np.sign(self.ball_coordx)*min(1, abs(self.ball_coordx))], [self.ball_coordy], _CallSync='off')
+
+			if abs(self.ball_coordy)>0.7:
+				self.ball_coordy = self.ball_coordy - 0.3*self.ball_coordy
+			if abs(self.ball_coordx)>1 and self.show_one_item is False:
+				winner_color = color1
+				self.winner_text = pg.TextItem(html=self.text_html.format(winner_color), anchor=(0.3,1.3),\
+				border=QColor(winner_color), fill=(201, 165, 255, 100))
+				
+				self.plot_arena.addItem(self.winner_text)
+				self.show_one_item = True
+				self.on_stop()
 			
 	
 	def read_serial_data(self):
