@@ -17,7 +17,7 @@ from com_monitor import ComMonitorThread
 from libs.utils import get_all_from_queue, get_item_from_queue
 from libs.decode import decode_output
 from livedatafeed import LiveDataFeed
-
+from scipy.interpolate import interp1d
 
 color1 = "limegreen"
 width_signal = 5
@@ -45,12 +45,15 @@ class PlottingDataMonitor(QMainWindow):
 		## spectrum boundaries
 		self.x_low = 0.1
 		self.x_high = 3
+		self.frequency = 1 ##Hz
+		self.nmax = 10000
+		self.fft1_norm = np.zeros((self.nmax//2))
 		
 		## init arena stuff
 		self.ball_coordx = 0.
 		self.ball_coordy = 0.
-		self.tuning_factor = 0.5
-		self.text_html = '<div style="text-align: center"><span style="color: #FFF; font-size: 40pt">Goal</span><br><span style="color: #FFF; font-size: 40pt; text-align: center"> {} is winner </span></div>'
+		self.tuning_factor = 0.001
+		self.text_html = '<div style="text-align: center"><span style="color: #FFF; font-size: 30pt">Goal</span><br><span style="color: #FFF; font-size: 30pt; text-align: center"> {} is winner </span></div>'
 		self.show_one_item = False
 		self.winner_text = None
 	
@@ -80,6 +83,9 @@ class PlottingDataMonitor(QMainWindow):
 			return plot, curve
 	
 	def create_arenaplot(self, xlabel, ylabel="Player "+color1, xlim=[-1,1], ylim=[-1,1], curve_style=None):
+		""" create plot/arena in form of a soccer field
+		"""
+
 		plot = pg.PlotWidget(background=QColor("#217300"))
 		if curve_style is not None:
 			curve = plot.plot(symbol=curve_style, antialias=True, symbolSize=15, symbolBrush='w')
@@ -120,8 +126,8 @@ class PlottingDataMonitor(QMainWindow):
 
 		## Plot
 		##
-		self.plot, self.curve = self.create_plot('Time', 'Signal', [0,5], [0,1000])
-		self.plot_fft, self.curve_fft = self.create_plot('Frequency', 'FFt', [0,75], [0,0.01])
+		self.plot, self.curve = self.create_plot('Time', 'Signal', [0,5], [0,1200])
+		self.plot_fft, self.curve_fft = self.create_plot('Frequency', 'FFt', [0,30], [0,.01])
 		
 		plot_layout = QVBoxLayout()
 		plot_layout.addWidget(self.plot)
@@ -146,7 +152,7 @@ class PlottingDataMonitor(QMainWindow):
 		main_layout.addWidget(plot_groupbox_arena,0,1,1,1)
 		
 		self.main_frame.setLayout(main_layout)
-		self.setGeometry(30, 30, 950, 300)
+		self.setGeometry(30, 55, 950, 300)
 		
 		self.setCentralWidget(self.main_frame)
 		#self.set_actions_enable_state()
@@ -251,12 +257,14 @@ class PlottingDataMonitor(QMainWindow):
 		self.timer = QTimer()
 		self.connect(self.timer, SIGNAL('timeout()'), self.on_timer)
 		update_freq = 1000. #Hz
-		self.timer.start(1000.0 / update_freq) #ms
+		
 		
 		self.timer_plot = QTimer()
 		self.connect(self.timer_plot, SIGNAL('timeout()'), self.on_timer_plot)
-		update_freq = 10. #Hz
-		self.timer_plot.start(1000.0 / update_freq) #ms
+		update_freq_plot = 10. #Hz
+		
+		self.timer.start(1000.0 / update_freq) #ms
+		self.timer_plot.start(1000.0 / update_freq_plot) #ms
 		
 		self.status_text.setText('Monitor running')
 		
@@ -267,10 +275,13 @@ class PlottingDataMonitor(QMainWindow):
 		self.read_serial_data()
 		if self.livefeed.has_new_data:
 			self.livefeed.append_data(self.livefeed.read_data())
+			#self.livefeed.append_data_array(self.livefeed.read_data())
 	
 	def on_timer_plot(self):
+		""" Executed periodically when the plot update timer
+			is fired.
+		"""
 		self.update_monitor()
-
 	
 	def update_monitor(self):
 		""" Updates the state of the monitor window with new 
@@ -285,25 +296,29 @@ class PlottingDataMonitor(QMainWindow):
 			xdata = [s[0] for s in self.temperature_samples]
 			ydata = [s[1] for s in self.temperature_samples]
 			
+			f = interp1d(xdata, ydata)# alternative (slow) choice: kind='cubic'
+			xdata = np.linspace(xdata[0],xdata[-1],len(xdata))
+			ydata = f(xdata)
+			n = len(ydata)
+			
 			self.plot.setXRange(max(0,xdata[-1]-time_axis_range), max(time_axis_range, xdata[-1]))
 			self.curve.setData(xdata, ydata, _CallSync='off')
 			
 			# plot fft of port 1
 			#
-			delta = np.array(xdata[1:])-np.array(xdata[:-1])
-			#print(np.nanmean(delta))#,np.nanstd(delta))
-			n = len(ydata)
+			delta = xdata[1]-xdata[0]
+			#delta = np.array(xdata[1:])-np.array(xdata[:-1])
+			#print(np.mean(delta),xdata[-1],n)#,np.nanstd(delta))
 			fft1 = np.abs(np.fft.rfft(ydata))
-			fft1 = (fft1/np.sum(fft1))[1:]
-			x = np.fft.rfftfreq(n,d=np.nanmean(delta))[1:]
+			if n>=(self.nmax):
+				self.fft1_norm += fft1[1:]
+				self.fft1_norm = self.fft1_norm/np.sum(self.fft1_norm)
+				x = np.fft.rfftfreq(n,d=delta)[1:]
 
-			self.curve_fft.setData(x,fft1)
-			self.plot_fft.replot()
+				self.curve_fft.setData(x,self.fft1_norm)
+				ind_alpha = (x>self.x_low)*(x<self.x_high)
+				power_alpha = np.sum(self.fft1_norm[ind_alpha])
 			
-			power_alpha = np.sum(fft1[(x>self.x_low)*(x<self.x_high)])
-			#print(power_alpha)
-			
-			if n>999:
 				#print((power_alpha)*self.tuning_factor)
 				self.ball_coordx += (power_alpha)*self.tuning_factor
 				self.ball_coordy += np.random.normal(scale=0.05)
@@ -326,19 +341,38 @@ class PlottingDataMonitor(QMainWindow):
 		""" Called periodically by the update timer to read data
 			from the serial port.
 		"""
-		#qdata = list(get_all_from_queue(self.data_q))
-		#if len(qdata) > 0:
-			#data = dict(timestamp=qdata[-1][1], 
-						#temperature=decode_output(qdata[-1][0]))
-			#self.livefeed.add_data(data)
-		
-		qdata = list(get_item_from_queue(self.data_q))
-		tstamp = qdata[1]
-		output = decode_output(qdata[0])
-		if len(output) > 0:
-			data = dict(timestamp=tstamp, 
+		qdata = list(get_all_from_queue(self.data_q))
+		if len(qdata) > 0:
+			output = decode_output(qdata[-1][0])
+			data = dict(timestamp=qdata[-1][1], 
 						temperature=float(np.nanmean(output)))
 			self.livefeed.add_data(data)
+			
+		## dont average over signal but plot every bit, assume sample rate of 10kHz 
+		#
+		#qdata = list(get_all_from_queue(self.data_q))
+		#if len(qdata) > 0:
+			#output = decode_output(qdata[-1][0])
+			#tstamp = qdata[-1][1]
+			#tstamps = np.linspace(tstamp-len(output)*10**(-5),tstamp,len(output))
+			#data = dict(timestamp=tstamps, 
+						#temperature= np.array([float(item) for item in output]) )
+			#self.livefeed.add_data(data)
+		
+		
+		#qdata = list(get_item_from_queue(self.data_q))
+		#tstamp = qdata[1]
+		#output = decode_output(qdata[0])
+		#if len(output) > 0:
+			#data = dict(timestamp=tstamp, 
+						#temperature=float(np.nanmean(output)))#
+			#self.livefeed.add_data(data)
+		
+		#if len(output) > 0:
+			#tstamps = np.linspace(tstamp-len(output)*10**(-5),tstamp,len(output))
+			#data = dict(timestamp=tstamps, 
+						#temperature= np.array([float(item) for item in output]) )
+			#self.livefeed.add_data(data)
 			
 	# The following two methods are utilities for simpler creation
 	# and assignment of actions
