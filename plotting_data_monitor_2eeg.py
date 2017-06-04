@@ -17,6 +17,7 @@ from com_monitor import ComMonitorThread
 from libs.utils import get_all_from_queue, get_item_from_queue
 from libs.decode import decode_output
 from livedatafeed import LiveDataFeed
+from scipy.interpolate import interp1d
 
 ## plotting parameters
 color1 = "limegreen"
@@ -89,6 +90,8 @@ class PlottingDataMonitor(QMainWindow):
 			return plot, curve
 
 	def create_arenaplot(self, xlabel, ylabel="Player "+color1, xlim=[-1,1], ylim=[-1,1], curve_style=None):
+		""" create plot/arena in form of a soccer field
+		"""
 		plot = pg.PlotWidget(background=QColor("#217300"))
 		if curve_style is not None:
 			curve = plot.plot(symbol=curve_style,antialias=True, symbolSize=15, symbolBrush='w')
@@ -96,19 +99,31 @@ class PlottingDataMonitor(QMainWindow):
 			curve = plot.plot(antialias=True)
 		plot.setLabel('left', ylabel)
 		plot.setLabel('bottom', xlabel)
-		plot.setXRange(xlim[0], xlim[1])
-		plot.setYRange(ylim[0], ylim[1])
+		plot.setXRange(xlim[0], xlim[1], 0.1)
+		plot.setYRange(ylim[0], ylim[1], 0.1)
+		plot.hideAxis('bottom')
+		plot.hideAxis('left')
 		plot.replot()
 		
-		spi = pg.ScatterPlotItem(size=15, pen=pg.mkPen(None), brush=pg.mkBrush(255,255,255,0))
+		spi = pg.ScatterPlotItem(size=5, pen=pg.mkPen(None), brush=pg.mkBrush(255,255,255,255))
+		spi.addPoints([{'pos' : [0,0], 'data' : 1}])
+		plot.addItem(spi)
+		
+		spi = pg.ScatterPlotItem(size=70, brush=pg.mkBrush(255,255,255,0))
 		spi.addPoints([{'pos' : [0,0], 'data' : 1, 'pen' : 'w'}])
 		plot.addItem(spi)
 		
 		central_line = pg.GraphItem()
 		plot.addItem(central_line)
-		pos = np.array([[0.,-1.],[0.,1.],[-1.,0.2],[-0.85,0.2],[-0.85,-0.2],[-1.,-0.2],[1,0.2],[0.85,0.2],[0.85,-0.2],[1,-0.2]])
-		adj = np.array([[0,1],[2,3],[3,4],[4,5],[6,7],[7,8],[8,9]])
-		lines = np.array([(255,255,255,255,1)]*7,dtype=[('red',np.ubyte),('green',np.ubyte),('blue',np.ubyte),('alpha',np.ubyte),('width',float)])
+		w = 0.5
+		pos = np.array([[0.,-1.],[0.,1.],[-1.,w],[-0.7,w],[-0.7,-w],
+		[-1.,-w],[1,w],[0.7,w],[0.7,-w],[1,-w], [-1,-1],[-1,1], [1,-1],[1,1],
+		[-1,0.2],[-1.1,0.2],[-1.1,-0.2],[-1,-0.2],
+		[1,0.2],[1.1,0.2],[1.1,-0.2],[1,-0.2]])
+		adj = np.array([[0,1], [2,3],[3,4],[4,5], [6,7],[7,8],[8,9],[10,12],[11,13],
+		[14,15],[15,16],[16,17],[18,19],[19,20],[20,21], [10,11],[12,13]])
+		lines = np.array([(255,255,255,255,1)]*15 + [(255,0,255,255,4),(0,255,0,255,4)],
+		dtype=[('red',np.ubyte),('green',np.ubyte),('blue',np.ubyte),('alpha',np.ubyte),('width',float)])
 		central_line.setData(pos=pos,adj=adj,pen=lines,size=0.1)
 
 		return plot, curve
@@ -163,9 +178,6 @@ class PlottingDataMonitor(QMainWindow):
 ###rewrite (trial) Sigrid to implement two windows
 		#self.main_frame 
 		
-
-
-
 
 	def create_menu(self):
 		self.file_menu = self.menuBar().addMenu("&File")
@@ -312,6 +324,9 @@ class PlottingDataMonitor(QMainWindow):
 		#self.update_monitor()
 		
 	def on_timer_plot(self):
+		""" Executed periodically when the plot update timer
+			is fired.
+		"""
 		self.update_monitor()
 
 	def update_monitor(self):
@@ -321,31 +336,28 @@ class PlottingDataMonitor(QMainWindow):
 			nothing is updated.
 		"""
 		update1, update2 = False,False
-		#if self.livefeed.has_new_data:
 		if self.livefeed.updated_list:
-			#data = self.livefeed.read_data()
 			self.temperature_samples = self.livefeed.read_list()
-			
-			#self.temperature_samples.append(
-				#(data['timestamp'], data['temperature']))
-			#if len(self.temperature_samples) > 1000:
-				#self.temperature_samples.pop(0)
-			
+
 			xdata = [s[0] for s in self.temperature_samples]
 			ydata = [s[1] for s in self.temperature_samples]
+			
+			f = interp1d(xdata, ydata)# alternative (slow) choice: kind='cubic'
+			n = len(ydata)
+			xdata = np.linspace(xdata[0],xdata[-1],n)
+			ydata = f(xdata)
 			
 			self.plot.setXRange(max(0,xdata[-1]-time_axis_range), max(time_axis_range, xdata[-1]))
 			self.curve.setData(xdata, ydata, _CallSync='off')
 			
 			# plot fft of port 1
 			#
-			delta = np.array(xdata[1:])-np.array(xdata[:-1])
+			delta = xdata[1] - xdata[0]
 			#print(np.nanmean(delta),xdata[-1])#,np.nanstd(delta)
 			#print(xdata[-1])
-			n = len(ydata)
 			fft1 = np.abs(np.fft.rfft(ydata))
 			fft1 = (fft1/np.sum(fft1))[1:]
-			x = np.fft.rfftfreq(n,d=np.nanmean(delta))[1:]
+			x = np.fft.rfftfreq(n,d=delta)[1:]
 			
 			self.curve_fft.setData(x,fft1, _CallSync='off')
 			
@@ -356,17 +368,21 @@ class PlottingDataMonitor(QMainWindow):
 			self.temperature_samples2 = self.livefeed2.read_list()
 
 			xdata = [s[0] for s in self.temperature_samples2]
-			ydata = [s[1]+400 for s in self.temperature_samples2]
-
+			ydata = [s[1]-200 for s in self.temperature_samples2]
+			
+			f = interp1d(xdata, ydata)# alternative (slow) choice: kind='cubic'
+			n = len(ydata)
+			xdata = np.linspace(xdata[0],xdata[-1],n)
+			ydata = f(xdata)
+			
 			self.curve2.setData(xdata, ydata, _CallSync='off')
 			
 			# plot fft of port 2
 			#
-			n = len(ydata)
-			delta = np.array(xdata[1:])-np.array(xdata[:-1])
+			delta = xdata[1] - xdata[0]
 			fft1 = np.abs(np.fft.rfft(ydata))
 			fft1 = (fft1/np.sum(fft1))[1:]
-			x = np.fft.rfftfreq(n,d=np.nanmean(delta))[1:]
+			x = np.fft.rfftfreq(n,d=delta)[1:]
 			
 			self.curve2_fft.setData(x,fft1, _CallSync='off')
 			
@@ -378,18 +394,15 @@ class PlottingDataMonitor(QMainWindow):
 				#print((power_alpha2 - power_alpha)*self.tuning_factor)
 				self.ball_coordx += (power_alpha2 - power_alpha)*self.tuning_factor
 				self.ball_coordy += np.random.normal(scale=0.05)
-				#self.ball_coordy[0] += 0
-			#else:
-				#self.ball_coordx[0] = 0
-				#self.ball_coordy[0] = 0
-			print(self.ball_coordx, self.ball_coordy)
+
+			#print(self.ball_coordx, self.ball_coordy)
 			self.curve_arena.setData([np.sign(self.ball_coordx)*min(1, abs(self.ball_coordx))], [self.ball_coordy], _CallSync='off')
 
-			if abs(self.ball_coordy)>0.7:
+			if abs(self.ball_coordy)>(0.7*(1.1-abs(self.ball_coordx))):
 				self.ball_coordy = self.ball_coordy - 0.3*self.ball_coordy
 			if abs(self.ball_coordx)>1 and self.show_one_item is False:
 				winner_color = color1 if self.ball_coordx<0 else color2
-				self.winner_text = pg.TextItem(html=self.text_html.format(winner_color), anchor=(0.3,1.3),\
+				self.winner_text = pg.TextItem(html=self.text_html.format(winner_color), anchor=(0.5,2.3),\
 				border=QColor(winner_color), fill=(201, 165, 255, 100))
 				
 				self.plot_arena.addItem(self.winner_text)
