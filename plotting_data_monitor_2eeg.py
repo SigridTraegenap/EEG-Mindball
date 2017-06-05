@@ -20,8 +20,10 @@ from livedatafeed import LiveDataFeed
 from scipy.interpolate import interp1d
 
 ## plotting parameters
-color1 = "limegreen"
-color2 = "magenta"
+color1 = "#FF7D00"   #orange
+color2 = "#4814CC"  #blue
+name_color1 = "orange"
+name_color2 = "blue"
 width_signal = 5
 time_axis_range = 2 ## in s
 
@@ -48,8 +50,8 @@ class PlottingDataMonitor(QMainWindow):
 		self.create_status_bar()
 		
 		## spectrum boundaries
-		self.x_low = 0.1
-		self.x_high = 3
+		self.x_low = 4
+		self.x_high = 13
 		
 		## init arena stuff
 		self.ball_coordx = 0.
@@ -92,7 +94,7 @@ class PlottingDataMonitor(QMainWindow):
 	def create_arenaplot(self, xlabel, ylabel="Player "+color1, xlim=[-1,1], ylim=[-1,1], curve_style=None):
 		""" create plot/arena in form of a soccer field
 		"""
-		plot = pg.PlotWidget(background=QColor("#217300"))
+		plot = pg.PlotWidget(background=QColor("#008A0E"))
 		if curve_style is not None:
 			curve = plot.plot(symbol=curve_style,antialias=True, symbolSize=15, symbolBrush='w')
 		else:
@@ -120,9 +122,12 @@ class PlottingDataMonitor(QMainWindow):
 		[-1.,-w],[1,w],[0.7,w],[0.7,-w],[1,-w], [-1,-1],[-1,1], [1,-1],[1,1],
 		[-1,0.2],[-1.1,0.2],[-1.1,-0.2],[-1,-0.2],
 		[1,0.2],[1.1,0.2],[1.1,-0.2],[1,-0.2]])
+
 		adj = np.array([[0,1], [2,3],[3,4],[4,5], [6,7],[7,8],[8,9],[10,12],[11,13],
 		[14,15],[15,16],[16,17],[18,19],[19,20],[20,21], [10,11],[12,13]])
-		lines = np.array([(255,255,255,255,1)]*15 + [(255,0,255,255,4),(0,255,0,255,4)],
+
+		#color1, color2 (magenta, green)
+		lines = np.array([(255,255,255,255,1)]*15 + [(255,125,0,255,4),(72,20,204,255,4)],
 		dtype=[('red',np.ubyte),('green',np.ubyte),('blue',np.ubyte),('alpha',np.ubyte),('width',float)])
 		central_line.setData(pos=pos,adj=adj,pen=lines,size=0.1)
 
@@ -145,8 +150,8 @@ class PlottingDataMonitor(QMainWindow):
 
 		## Plot
 		##
-		self.plot, self.curve, self.curve2 = self.create_plot('Time', 'Signal', [0,5,1], [0,1500,200], ncurves=2)
-		self.plot_fft, self.curve_fft, self.curve2_fft = self.create_plot('Time', 'FFt', [0,75,10], [0,0.02,0.005], ncurves=2)
+		self.plot, self.curve, self.curve2 = self.create_plot('Time', 'Signal', [0,5,1], [300,600,200], ncurves=2)
+		self.plot_fft, self.curve_fft, self.curve2_fft = self.create_plot('Frequency [Hz]', 'Power', [0,40,10], [0,0.02,0.005], ncurves=2)
 		
 		plot_layout = QVBoxLayout()
 		plot_layout.addWidget(self.plot)
@@ -401,7 +406,7 @@ class PlottingDataMonitor(QMainWindow):
 			if abs(self.ball_coordy)>(0.7*(1.1-abs(self.ball_coordx))):
 				self.ball_coordy = self.ball_coordy - 0.3*self.ball_coordy
 			if abs(self.ball_coordx)>1 and self.show_one_item is False:
-				winner_color = color1 if self.ball_coordx<0 else color2
+				winner_color = name_color1 if self.ball_coordx<0 else name_color2
 				self.winner_text = pg.TextItem(html=self.text_html.format(winner_color), anchor=(0.5,2.3),\
 				border=QColor(winner_color), fill=(201, 165, 255, 100))
 				
