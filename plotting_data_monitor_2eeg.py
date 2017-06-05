@@ -141,11 +141,15 @@ class PlottingDataMonitor(QMainWindow):
 		# Main frame and layout
 		#
 		self.main_frame = QWidget()
+
+		self.arena_frame = QWidget()
 		main_layout = QGridLayout()
+
+		arena_layout = QGridLayout()
 		#main_layout.setSpacing(3)
 		#main_layout.setRowStretch(1, 2)
 		#main_layout.setColumnStretch(1, 1)
-		main_layout.setColumnStretch(0,1)
+		main_layout.setColumnStretch(2,1)
 
 
 		## Plot
@@ -172,16 +176,18 @@ class PlottingDataMonitor(QMainWindow):
 
 		## Main frame and layout
 		##
-		main_layout.addWidget(plot_groupbox,0,0)
-		main_layout.addWidget(plot_groupbox_arena,0,1,1,1)
+		main_layout.addWidget(plot_groupbox,0,0,2,1)
+
+		main_layout.addWidget(plot_groupbox_arena,0,1,1,3)
+		#arena_layout.addWidget(plot_groupbox_arena,0,0)
+		#self.arena_frame.setLayout(arena_layout)
 		
 		self.main_frame.setLayout(main_layout)
-		self.setGeometry(30, 30, 950, 300)
+		self.setGeometry(0, 0, 1600, 800)
 		
 		self.setCentralWidget(self.main_frame)
 
-###rewrite (trial) Sigrid to implement two windows
-		#self.main_frame 
+		
 		
 
 	def create_menu(self):

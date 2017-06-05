@@ -43,8 +43,8 @@ class PlottingDataMonitor(QMainWindow):
 		self.create_status_bar()
 		
 		## spectrum boundaries
-		self.x_low = 0.1
-		self.x_high = 3
+		self.x_low = 4
+		self.x_high = 13
 		self.frequency = 1 ##Hz
 		self.nmax = 1000
 		self.fft1_norm = np.zeros((self.nmax//2))
@@ -131,10 +131,12 @@ class PlottingDataMonitor(QMainWindow):
 		# Main frame and layout
 		#
 		self.main_frame = QWidget()
+
+		self.arena_frame = QWidget()
 		main_layout = QGridLayout()
-		#main_layout.setSpacing(3)
-		#main_layout.setRowStretch(1, 2)
-		main_layout.setColumnStretch(1, 2)
+
+		arena_layout = QGridLayout()
+		main_layout.setColumnStretch(2, 1)
 
 
 		## Plot
@@ -142,6 +144,7 @@ class PlottingDataMonitor(QMainWindow):
 		self.plot, self.curve = self.create_plot('Time', 'Signal', [0,5], [0,1200])
 		self.plot_fft, self.curve_fft = self.create_plot('Frequency', 'FFt', [0,30], [0,.01])
 		
+
 		plot_layout = QVBoxLayout()
 		plot_layout.addWidget(self.plot)
 		plot_layout.addWidget(self.plot_fft)
@@ -162,13 +165,20 @@ class PlottingDataMonitor(QMainWindow):
 		## Main frame and layout
 		##
 		main_layout.addWidget(plot_groupbox,0,0)
-		main_layout.addWidget(plot_groupbox_arena,0,1,1,1)
+
+		main_layout.addWidget(plot_groupbox_arena,0,1,1,3)
+		arena_layout.addWidget(plot_groupbox_arena,0,0)
+		self.arena_frame.setLayout(arena_layout)
 		
 		self.main_frame.setLayout(main_layout)
-		self.setGeometry(30, 55, 950, 300)
+		self.setGeometry(0, 0, 1600, 800)
+		#screen x-start position, y-start postion,width, heigth 
 		
 		self.setCentralWidget(self.main_frame)
+#		self.setCentralWidget(self.arena_frame)
 		#self.set_actions_enable_state()
+
+
 
 	def create_menu(self):
 		self.file_menu = self.menuBar().addMenu("&File")
