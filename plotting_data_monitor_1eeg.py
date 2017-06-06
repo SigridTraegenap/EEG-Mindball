@@ -46,7 +46,7 @@ class PlottingDataMonitor(QMainWindow):
 		self.x_low = 0.1
 		self.x_high = 3
 		self.frequency = 1 ##Hz
-		self.nmax = 1000
+		self.nmax = 10000
 		self.fft1_norm = np.zeros((self.nmax//2))
 		
 		## init arena stuff
@@ -140,7 +140,7 @@ class PlottingDataMonitor(QMainWindow):
 		## Plot
 		##
 		self.plot, self.curve = self.create_plot('Time', 'Signal', [0,5], [0,1200])
-		self.plot_fft, self.curve_fft = self.create_plot('Frequency', 'FFt', [0,30], [0,.01])
+		self.plot_fft, self.curve_fft = self.create_plot('Frequency', 'FFt', [0,60], [0,.01])
 		
 		plot_layout = QVBoxLayout()
 		plot_layout.addWidget(self.plot)
@@ -177,15 +177,18 @@ class PlottingDataMonitor(QMainWindow):
 			shortcut="Ctrl+M", slot=self.on_start, tip="Start the data monitor")
 		self.stop_action = self.create_action("&Stop monitor",
 			shortcut="Ctrl+T", slot=self.on_stop, tip="Stop the data monitor")
+		self.start_arena_action = self.create_action("&Start arena",
+			shortcut="Ctrl+A", slot=self.on_arena, tip="Start the arena")
 		exit_action = self.create_action("E&xit", slot=self.close, 
 			shortcut="Ctrl+X", tip="Exit the application")
 		
 		self.start_action.setEnabled(True)
 		self.stop_action.setEnabled(False)
+		self.start_arena_action.setEnabled(False)
 		
 		self.add_actions(self.file_menu, 
 			(   self.start_action, self.stop_action,
-				None, exit_action))
+				self.start_arena_action, None, exit_action))
 			
 		self.help_menu = self.menuBar().addMenu("&Help")
 		about_action = self.create_action("&About", 
@@ -197,9 +200,11 @@ class PlottingDataMonitor(QMainWindow):
 	def set_actions_enable_state(self):
 		start_enable = not self.monitor_active
 		stop_enable = self.monitor_active
+		start_arena_enable = self.monitor_active
 		
 		self.start_action.setEnabled(start_enable)
 		self.stop_action.setEnabled(stop_enable)
+		self.start_arena_action.setEnabled(start_arena_enable)
 
 	def on_about(self):
 		msg = __doc__
@@ -271,7 +276,6 @@ class PlottingDataMonitor(QMainWindow):
 		self.connect(self.timer, SIGNAL('timeout()'), self.on_timer)
 		update_freq = 1000. #Hz
 		
-		
 		self.timer_plot = QTimer()
 		self.connect(self.timer_plot, SIGNAL('timeout()'), self.on_timer_plot)
 		update_freq_plot = 10. #Hz
@@ -296,6 +300,10 @@ class PlottingDataMonitor(QMainWindow):
 		"""
 		self.update_monitor()
 	
+	def on_arena(self):
+		self.playing = True
+		print('Game is starting.')
+	
 	def update_monitor(self):
 		""" Updates the state of the monitor window with new 
 			data. The livefeed is used to find out whether new
@@ -309,31 +317,29 @@ class PlottingDataMonitor(QMainWindow):
 			xdata = [s[0] for s in self.temperature_samples]
 			ydata = [s[1] for s in self.temperature_samples]
 			
-			f = interp1d(xdata, ydata)# alternative (slow) choice: kind='cubic'
 			n = len(ydata)
+			f = interp1d(xdata, ydata)# alternative (slow) choice: kind='cubic'
 			xdata = np.linspace(xdata[0],xdata[-1],n)
 			ydata = f(xdata)
-			
 			
 			self.plot.setXRange(max(0,xdata[-1]-time_axis_range), max(time_axis_range, xdata[-1]))
 			self.curve.setData(xdata, ydata, _CallSync='off')
 			
 			# plot fft of port 1
 			#
-			delta = xdata[1]-xdata[0]
-			#delta = np.array(xdata[1:])-np.array(xdata[:-1])
-			#print(np.mean(delta),xdata[-1],n)#,np.nanstd(delta))
-			fft1 = np.abs(np.fft.rfft(ydata))
 			if n>=(self.nmax):
+				delta = xdata[1]-xdata[0]
+				fft1 = np.abs(np.fft.rfft(ydata))
 				self.fft1_norm += fft1[1:]
 				self.fft1_norm = self.fft1_norm/np.sum(self.fft1_norm)
 				x = np.fft.rfftfreq(n,d=delta)[1:]
-
+			
 				self.curve_fft.setData(x,self.fft1_norm)
+				
+			if self.playing:
 				ind_alpha = (x>self.x_low)*(x<self.x_high)
 				power_alpha = np.sum(self.fft1_norm[ind_alpha])
 			
-				#print((power_alpha)*self.tuning_factor)
 				self.ball_coordx += (power_alpha)*self.tuning_factor
 				self.ball_coordy += np.random.normal(scale=0.05)
 
@@ -341,7 +347,7 @@ class PlottingDataMonitor(QMainWindow):
 
 			if abs(self.ball_coordy)>(0.7*(1.1-abs(self.ball_coordx))):
 				self.ball_coordy = self.ball_coordy*0.6
-			if abs(self.ball_coordx)>1 and self.show_one_item is False:
+			if (abs(self.ball_coordx)>1 and self.show_one_item is False):
 				winner_color = color1
 				self.winner_text = pg.TextItem(html=self.text_html.format(winner_color), anchor=(0.5,2.3),\
 				border=QColor(winner_color), fill=(201, 165, 255, 100))
