@@ -46,7 +46,7 @@ class PlottingDataMonitor(QMainWindow):
 		self.x_low = 4
 		self.x_high = 13
 		self.frequency = 1 ##Hz
-		self.nmax = 10000
+		self.nmax = 1000
 		self.fft1_norm = np.zeros((self.nmax//2))
 		
 		## init arena stuff
@@ -56,6 +56,7 @@ class PlottingDataMonitor(QMainWindow):
 		self.text_html = '<div style="text-align: center"><span style="color: #FFF; font-size: 30pt">Goal</span><br><span style="color: #FFF; font-size: 30pt; text-align: center"> {} is winner </span></div>'
 		self.show_one_item = False
 		self.winner_text = None
+		self.playing = False
 	
 	def create_plot(self, xlabel, ylabel, xlim, ylim, ncurves=1):
 		plot = pg.PlotWidget()
@@ -136,7 +137,7 @@ class PlottingDataMonitor(QMainWindow):
 		main_layout = QGridLayout()
 
 		arena_layout = QGridLayout()
-		main_layout.setColumnStretch(2, 1)
+		main_layout.setColumnStretch(0,1)
 
 
 		## Plot
@@ -166,12 +167,12 @@ class PlottingDataMonitor(QMainWindow):
 		##
 		main_layout.addWidget(plot_groupbox,0,0)
 
-		main_layout.addWidget(plot_groupbox_arena,0,1,1,3)
+		main_layout.addWidget(plot_groupbox_arena,0,1,1,1)
 		arena_layout.addWidget(plot_groupbox_arena,0,0)
 		self.arena_frame.setLayout(arena_layout)
 		
 		self.main_frame.setLayout(main_layout)
-		self.setGeometry(0, 0, 1600, 800)
+		self.setGeometry(30, 30, 950, 500)
 		#screen x-start position, y-start postion,width, heigth 
 		
 		self.setCentralWidget(self.main_frame)
@@ -220,7 +221,6 @@ class PlottingDataMonitor(QMainWindow):
 		msg = __doc__
 		QMessageBox.about(self, "About the demo", msg.strip())
 	
-
 	def on_stop(self):
 		""" Stop the monitor
 		"""
@@ -312,6 +312,8 @@ class PlottingDataMonitor(QMainWindow):
 	
 	def on_arena(self):
 		self.playing = True
+		self.ball_coordx, self.ball_coordy = 0,0
+		self.curve_arena.setData([self.ball_coordx], [self.ball_coordy])
 		print('Game is starting.')
 	
 	def update_monitor(self):
@@ -346,26 +348,27 @@ class PlottingDataMonitor(QMainWindow):
 			
 				self.curve_fft.setData(x,self.fft1_norm)
 				
-			if self.playing:
+			if (self.playing and n>=(self.nmax)):
 				ind_alpha = (x>self.x_low)*(x<self.x_high)
 				power_alpha = np.sum(self.fft1_norm[ind_alpha])
 			
 				self.ball_coordx += (power_alpha)*self.tuning_factor
 				self.ball_coordy += np.random.normal(scale=0.05)
 
-			self.curve_arena.setData([np.sign(self.ball_coordx)*min(1, abs(self.ball_coordx))], [self.ball_coordy], _CallSync='off')
+				self.curve_arena.setData([np.sign(self.ball_coordx)*min(1, abs(self.ball_coordx))], [self.ball_coordy], _CallSync='off')
 
-			if abs(self.ball_coordy)>(0.7*(1.1-abs(self.ball_coordx))):
-				self.ball_coordy = self.ball_coordy*0.6
-			if (abs(self.ball_coordx)>1 and self.show_one_item is False):
-				winner_color = color1
-				self.winner_text = pg.TextItem(html=self.text_html.format(winner_color), anchor=(0.5,2.3),\
-				border=QColor(winner_color), fill=(201, 165, 255, 100))
+				if abs(self.ball_coordy)>(0.7*(1.1-abs(self.ball_coordx))):
+					self.ball_coordy = self.ball_coordy*0.6
+				if (abs(self.ball_coordx)>1 and self.show_one_item is False):
+					winner_color = color1
+					self.winner_text = pg.TextItem(html=self.text_html.format(winner_color), anchor=(0.5,2.3),\
+					border=QColor(winner_color), fill=(201, 165, 255, 100))
+					
+					self.plot_arena.addItem(self.winner_text)
+					self.show_one_item = True
+					self.playing = False
+					self.on_stop()
 				
-				self.plot_arena.addItem(self.winner_text)
-				self.show_one_item = True
-				self.on_stop()
-			
 	
 	def read_serial_data(self):
 		""" Called periodically by the update timer to read data
