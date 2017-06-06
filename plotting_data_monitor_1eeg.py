@@ -27,10 +27,21 @@ pg.setConfigOption('background', 'w')
 pg.setConfigOption('foreground', 'k')
 #fixes to white background and black labels
 
+#class MultiWindows(QMainWindow):
+	#def __init__(self, param):
+		#self.__windows = []
+
+	#def addwindow(self, window):
+		#self.__windows.append(window)
+
+	#def show():
+		#for current_child_window in self.__windows:
+			#current_child_window.exec_()
 
 class PlottingDataMonitor(QMainWindow):
 	def __init__(self, parent=None):
 		super(PlottingDataMonitor, self).__init__(parent)
+		#QDialog.__init__(self, parent)
 		
 		self.monitor_active = False
 		self.com_monitor = None
@@ -131,20 +142,15 @@ class PlottingDataMonitor(QMainWindow):
 	def create_main_frame(self):
 		# Main frame and layout
 		#
-		self.main_frame = QWidget()
-
-		self.arena_frame = QWidget()
-		main_layout = QGridLayout()
-
-		arena_layout = QGridLayout()
-		main_layout.setColumnStretch(0,1)
-
+		self.mdi = QMdiArea()
+		#self.main_frame = QWidget()
+		#main_layout = QGridLayout()
+		#main_layout.setColumnStretch(0,1)
 
 		## Plot
 		##
 		self.plot, self.curve = self.create_plot('Time', 'Signal', [0,5], [0,1200])
 		self.plot_fft, self.curve_fft = self.create_plot('Frequency', 'FFt', [0,60], [0,.01])
-		
 
 		plot_layout = QVBoxLayout()
 		plot_layout.addWidget(self.plot)
@@ -165,20 +171,16 @@ class PlottingDataMonitor(QMainWindow):
 
 		## Main frame and layout
 		##
-		main_layout.addWidget(plot_groupbox,0,0)
-
-		main_layout.addWidget(plot_groupbox_arena,0,1,1,1)
-		arena_layout.addWidget(plot_groupbox_arena,0,0)
-		self.arena_frame.setLayout(arena_layout)
+		self.mdi.addSubWindow(plot_groupbox)
+		self.mdi.addSubWindow(plot_groupbox_arena)
+		self.setCentralWidget(self.mdi)
+		#main_layout.addWidget(plot_groupbox,0,0)
+		#main_layout.addWidget(plot_groupbox_arena,0,1,1,1)
 		
-		self.main_frame.setLayout(main_layout)
-		self.setGeometry(30, 30, 950, 500)
-		#screen x-start position, y-start postion,width, heigth 
+		#self.main_frame.setLayout(main_layout)
+		#self.setGeometry(30, 30, 950, 500)
 		
-		self.setCentralWidget(self.main_frame)
-#		self.setCentralWidget(self.arena_frame)
-		#self.set_actions_enable_state()
-
+		#self.setCentralWidget(self.main_frame)
 
 
 	def create_menu(self):
@@ -190,6 +192,8 @@ class PlottingDataMonitor(QMainWindow):
 			shortcut="Ctrl+T", slot=self.on_stop, tip="Stop the data monitor")
 		self.start_arena_action = self.create_action("&Start arena",
 			shortcut="Ctrl+A", slot=self.on_arena, tip="Start the arena")
+		self.tiled = self.create_action("&Tile windows",
+			shortcut="Ctrl+R", slot=self.tile_windows, tip="Tile open windows")
 		exit_action = self.create_action("E&xit", slot=self.close, 
 			shortcut="Ctrl+X", tip="Exit the application")
 		
@@ -199,7 +203,8 @@ class PlottingDataMonitor(QMainWindow):
 		
 		self.add_actions(self.file_menu, 
 			(   self.start_action, self.stop_action,
-				self.start_arena_action, None, exit_action))
+				self.start_arena_action, self.tiled,
+				None, exit_action))
 			
 		self.help_menu = self.menuBar().addMenu("&Help")
 		about_action = self.create_action("&About", 
@@ -315,6 +320,9 @@ class PlottingDataMonitor(QMainWindow):
 		self.ball_coordx, self.ball_coordy = 0,0
 		self.curve_arena.setData([self.ball_coordx], [self.ball_coordy])
 		print('Game is starting.')
+	
+	def tile_windows(self):
+		self.mdi.tileSubWindows()
 	
 	def update_monitor(self):
 		""" Updates the state of the monitor window with new 
@@ -438,7 +446,7 @@ class PlottingDataMonitor(QMainWindow):
 def main():
 	app = QApplication(sys.argv)
 	form = PlottingDataMonitor()
-	form.show()
+	form.show()	
 	app.exec_()
 
 
