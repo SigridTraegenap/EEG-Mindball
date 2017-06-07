@@ -16,8 +16,12 @@ import Queue
 from com_monitor import ComMonitorThread
 from libs.utils import get_all_from_queue, get_item_from_queue
 from libs.decode import decode_output
+from libs.read_audio import play_sound
 from livedatafeed import LiveDataFeed
+
 from scipy.interpolate import interp1d
+from scipy.signal import butter, lfilter
+
 
 color1 = "limegreen"
 width_signal = 5
@@ -27,21 +31,13 @@ pg.setConfigOption('background', 'w')
 pg.setConfigOption('foreground', 'k')
 #fixes to white background and black labels
 
-#class MultiWindows(QMainWindow):
-	#def __init__(self, param):
-		#self.__windows = []
-
-	#def addwindow(self, window):
-		#self.__windows.append(window)
-
-	#def show():
-		#for current_child_window in self.__windows:
-			#current_child_window.exec_()
+sound_path = '/home/bettina/physics/arduino/eeg_mindball/sound/'
+sound_files = ['End_of_football_game','Football-crowd-GOAL','intro_brass_01','Jingle_Win_00','Jingle_Win_01']
+ambience_sound = sound_path + 'Norwegian_football_matchsoccer_game_ambience.wav'
 
 class PlottingDataMonitor(QMainWindow):
 	def __init__(self, parent=None):
 		super(PlottingDataMonitor, self).__init__(parent)
-		#QDialog.__init__(self, parent)
 		
 		self.monitor_active = False
 		self.com_monitor = None
@@ -59,6 +55,7 @@ class PlottingDataMonitor(QMainWindow):
 		self.frequency = 1 ##Hz
 		self.nmax = 1000
 		self.fft1_norm = np.zeros((self.nmax//2))
+		self.b, self.a = butter(3, [0.0, 0.34], btype='band')
 		
 		## init arena stuff
 		self.ball_coordx = 0.
@@ -68,6 +65,8 @@ class PlottingDataMonitor(QMainWindow):
 		self.show_one_item = False
 		self.winner_text = None
 		self.playing = False
+		self.win_hymn_no = 2
+		
 	
 	def create_plot(self, xlabel, ylabel, xlim, ylim, ncurves=1):
 		plot = pg.PlotWidget()
@@ -86,7 +85,7 @@ class PlottingDataMonitor(QMainWindow):
 		curve.setPen(pen)
 		
 		if ncurves==2:
-			curve2 = plot.plot(symbol=curve_style)
+			curve2 = plot.plot(antialias=True)
 			#pen.setWidth(0.9)
 			pen2 = QPen(QColor('magenta'))
 			curve2.setPen(pen2)
@@ -149,7 +148,7 @@ class PlottingDataMonitor(QMainWindow):
 
 		## Plot
 		##
-		self.plot, self.curve = self.create_plot('Time', 'Signal', [0,5], [0,1200])
+		self.plot, self.curve = self.create_plot('Time', 'Signal', [0,5], [0,1000])
 		self.plot_fft, self.curve_fft = self.create_plot('Frequency', 'FFt', [0,60], [0,.01])
 
 		plot_layout = QVBoxLayout()
@@ -337,10 +336,14 @@ class PlottingDataMonitor(QMainWindow):
 			xdata = [s[0] for s in self.temperature_samples]
 			ydata = [s[1] for s in self.temperature_samples]
 			
+			## interpolate signal
 			n = len(ydata)
 			f = interp1d(xdata, ydata)# alternative (slow) choice: kind='cubic'
 			xdata = np.linspace(xdata[0],xdata[-1],n)
 			ydata = f(xdata)
+
+			## bandpass filter signal
+			ydata = lfilter(self.b, self.a, ydata)
 			
 			self.plot.setXRange(max(0,xdata[-1]-time_axis_range), max(time_axis_range, xdata[-1]))
 			self.curve.setData(xdata, ydata, _CallSync='off')
@@ -349,15 +352,16 @@ class PlottingDataMonitor(QMainWindow):
 			#
 			if n>=(self.nmax):
 				delta = xdata[1]-xdata[0]
-				fft1 = np.abs(np.fft.rfft(ydata))
-				self.fft1_norm += fft1[1:]
+				yfft = np.fft.rfft(ydata)
+				x = np.fft.rfftfreq(n,d=delta)
+				fft1 = np.abs(yfft)
+				self.fft1_norm += fft1[1:]/np.sum(fft1[1:])		#single items not well weighted
 				self.fft1_norm = self.fft1_norm/np.sum(self.fft1_norm)
-				x = np.fft.rfftfreq(n,d=delta)[1:]
 			
-				self.curve_fft.setData(x,self.fft1_norm)
+				self.curve_fft.setData(x[1:],self.fft1_norm)
 				
 			if (self.playing and n>=(self.nmax)):
-				ind_alpha = (x>self.x_low)*(x<self.x_high)
+				ind_alpha = (x[1:]>self.x_low)*(x[1:]<self.x_high)
 				power_alpha = np.sum(self.fft1_norm[ind_alpha])
 			
 				self.ball_coordx += (power_alpha)*self.tuning_factor
@@ -376,7 +380,9 @@ class PlottingDataMonitor(QMainWindow):
 					self.show_one_item = True
 					self.playing = False
 					self.on_stop()
-				
+					self.win_hymn_no = np.random.randint(len(sound_files))
+					play_sound(sound_path + sound_files[self.win_hymn_no] + '.wav')
+					
 	
 	def read_serial_data(self):
 		""" Called periodically by the update timer to read data
