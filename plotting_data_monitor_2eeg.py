@@ -17,7 +17,10 @@ from com_monitor import ComMonitorThread
 from libs.utils import get_all_from_queue, get_item_from_queue
 from libs.decode import decode_output
 from livedatafeed import LiveDataFeed
+
 from scipy.interpolate import interp1d
+from scipy.signal import butter, lfilter
+
 
 ## plotting parameters
 color1 = "#FF7D00"   #orange
@@ -52,6 +55,10 @@ class PlottingDataMonitor(QMainWindow):
 		## spectrum boundaries
 		self.x_low = 4
 		self.x_high = 13
+		self.frequency = 1 ##Hz
+		self.nmax = 1000
+		self.fft1_norm = np.zeros((self.nmax//2))
+		self.b, self.a = butter(3, [0.0, 0.34], btype='band')
 		
 		## init arena stuff
 		self.ball_coordx = 0.
@@ -60,15 +67,11 @@ class PlottingDataMonitor(QMainWindow):
 		self.text_html = '<div style="text-align: center"><span style="color: #FFF; font-size: 40pt">Goal</span><br><span style="color: #FFF; font-size: 40pt; text-align: center"> {} is winner </span></div>'
 		self.show_one_item = False
 		self.winner_text = None
+		self.playing = False
 	
-	def create_plot(self, xlabel, ylabel, xlim, ylim, curve_style=None, ncurves=1):
+	def create_plot(self, xlabel, ylabel, xlim, ylim, ncurves=1):
 		plot = pg.PlotWidget()
-		if curve_style is not None:
-			curve = plot.plot(symbol=curve_style,antialias=True, symbolSize=15)
-			#brush = QBrush(QColor('limegreen'))
-			#curve.setBrush(brush)
-		else:
-			curve = plot.plot(antialias=True)
+		curve = plot.plot(antialias=True)
 		plot.setLabel('left', ylabel)
 		plot.setLabel('bottom', xlabel)
 		plot.setXRange(xlim[0], xlim[1])
@@ -83,7 +86,7 @@ class PlottingDataMonitor(QMainWindow):
 		curve.setPen(pen)
 		
 		if ncurves==2:
-			curve2 = plot.plot(symbol=curve_style)
+			curve2 = plot.plot(antialias=True)
 			#pen.setWidth(0.9)
 			pen2 = QPen(QColor(color2))
 			curve2.setPen(pen2)
@@ -140,16 +143,10 @@ class PlottingDataMonitor(QMainWindow):
 	def create_main_frame(self):
 		# Main frame and layout
 		#
-		self.main_frame = QWidget()
-
-		self.arena_frame = QWidget()
-		main_layout = QGridLayout()
-
-		arena_layout = QGridLayout()
-		#main_layout.setSpacing(3)
-		#main_layout.setRowStretch(1, 2)
-		#main_layout.setColumnStretch(1, 1)
-		main_layout.setColumnStretch(2,1)
+		self.mdi = QMdiArea()
+		#self.main_frame = QWidget()
+		#main_layout = QGridLayout()
+		#main_layout.setColumnStretch(0,1)
 
 
 		## Plot
@@ -176,19 +173,17 @@ class PlottingDataMonitor(QMainWindow):
 
 		## Main frame and layout
 		##
-		main_layout.addWidget(plot_groupbox,0,0,2,1)
+		self.mdi.addSubWindow(plot_groupbox)
+		self.mdi.addSubWindow(plot_groupbox_arena)
+		self.setCentralWidget(self.mdi)
+		#main_layout.addWidget(plot_groupbox,0,0)
+		#main_layout.addWidget(plot_groupbox_arena,0,1,1,1)
+		
+		#self.main_frame.setLayout(main_layout)
+		#self.setGeometry(30, 30, 950, 500)
+		
+		#self.setCentralWidget(self.main_frame)
 
-		main_layout.addWidget(plot_groupbox_arena,0,1,1,3)
-		#arena_layout.addWidget(plot_groupbox_arena,0,0)
-		#self.arena_frame.setLayout(arena_layout)
-		
-		self.main_frame.setLayout(main_layout)
-		self.setGeometry(0, 0, 1600, 800)
-		
-		self.setCentralWidget(self.main_frame)
-
-		
-		
 
 	def create_menu(self):
 		self.file_menu = self.menuBar().addMenu("&File")
@@ -197,14 +192,20 @@ class PlottingDataMonitor(QMainWindow):
 			shortcut="Ctrl+M", slot=self.on_start, tip="Start the data monitor")
 		self.stop_action = self.create_action("&Stop monitor",
 			shortcut="Ctrl+T", slot=self.on_stop, tip="Stop the data monitor")
+		self.start_arena_action = self.create_action("&Start arena",
+			shortcut="Ctrl+A", slot=self.on_arena, tip="Start the arena")
+		self.tiled = self.create_action("&Tile windows",
+			shortcut="Ctrl+R", slot=self.tile_windows, tip="Tile open windows")
 		exit_action = self.create_action("E&xit", slot=self.close, 
 			shortcut="Ctrl+X", tip="Exit the application")
 		
 		self.start_action.setEnabled(True)
 		self.stop_action.setEnabled(False)
+		self.start_arena_action.setEnabled(False)
 		
 		self.add_actions(self.file_menu, 
 			(   self.start_action, self.stop_action,
+				self.start_arena_action, self.tiled,
 				None, exit_action))
 			
 		self.help_menu = self.menuBar().addMenu("&Help")
@@ -217,9 +218,11 @@ class PlottingDataMonitor(QMainWindow):
 	def set_actions_enable_state(self):
 		start_enable = not self.monitor_active
 		stop_enable = self.monitor_active
+		start_arena_enable = self.monitor_active
 		
 		self.start_action.setEnabled(start_enable)
 		self.stop_action.setEnabled(stop_enable)
+		self.start_arena_action.setEnabled(start_arena_enable)
 
 	def on_about(self):
 		msg = __doc__
@@ -313,12 +316,13 @@ class PlottingDataMonitor(QMainWindow):
 		self.timer = QTimer()
 		self.connect(self.timer, SIGNAL('timeout()'), self.on_timer)
 		update_freq = 1000. #Hz
-		self.timer.start(1000.0 / update_freq) #ms
 		
 		self.timer_plot = QTimer()
 		self.connect(self.timer_plot, SIGNAL('timeout()'), self.on_timer_plot)
-		update_freq = 10. #Hz
-		self.timer_plot.start(1000.0 / update_freq) #ms
+		update_freq_plot = 10. #Hz
+		
+		self.timer.start(1000.0 / update_freq) #ms
+		self.timer_plot.start(1000.0 / update_freq_plot) #ms
 		
 		self.status_text.setText('Monitor running')
 	
@@ -339,7 +343,16 @@ class PlottingDataMonitor(QMainWindow):
 			is fired.
 		"""
 		self.update_monitor()
-
+	
+	def on_arena(self):
+		self.playing = True
+		self.ball_coordx, self.ball_coordy = 0,0
+		self.curve_arena.setData([self.ball_coordx], [self.ball_coordy])
+		print('Game is starting.')
+	
+	def tile_windows(self):
+		self.mdi.tileSubWindows()
+	
 	def update_monitor(self):
 		""" Updates the state of the monitor window with new 
 			data. The livefeed is used to find out whether new
@@ -358,22 +371,24 @@ class PlottingDataMonitor(QMainWindow):
 			xdata = np.linspace(xdata[0],xdata[-1],n)
 			ydata = f(xdata)
 			
+			## bandpass filter signal
+			ydata = lfilter(self.b, self.a, ydata)
+			
 			self.plot.setXRange(max(0,xdata[-1]-time_axis_range), max(time_axis_range, xdata[-1]))
 			self.curve.setData(xdata, ydata, _CallSync='off')
 			
 			# plot fft of port 1
 			#
-			delta = xdata[1] - xdata[0]
-			#print(np.nanmean(delta),xdata[-1])#,np.nanstd(delta)
-			#print(xdata[-1])
-			fft1 = np.abs(np.fft.rfft(ydata))
-			fft1 = (fft1/np.sum(fft1))[1:]
-			x = np.fft.rfftfreq(n,d=delta)[1:]
-			
-			self.curve_fft.setData(x,fft1, _CallSync='off')
-			
-			power_alpha = np.sum(fft1[(x>self.x_low)*(x<self.x_high)])
-			update1 = True
+			if n>=(self.nmax):
+				delta = xdata[1] - xdata[0]
+				fft1 = np.abs(np.fft.rfft(ydata))
+				fft1 = (fft1/np.sum(fft1))[1:]
+				x = np.fft.rfftfreq(n,d=delta)[1:]
+				
+				self.curve_fft.setData(x,fft1, _CallSync='off')
+				
+				power_alpha = np.sum(fft1[(x>self.x_low)*(x<self.x_high)])
+				update1 = True
 			
 		if self.livefeed2.updated_list:
 			self.temperature_samples2 = self.livefeed2.read_list()
@@ -386,27 +401,27 @@ class PlottingDataMonitor(QMainWindow):
 			xdata = np.linspace(xdata[0],xdata[-1],n)
 			ydata = f(xdata)
 			
+			## bandpass filter signal
+			ydata = lfilter(self.b, self.a, ydata)			
 			self.curve2.setData(xdata, ydata, _CallSync='off')
 			
 			# plot fft of port 2
 			#
-			delta = xdata[1] - xdata[0]
-			fft1 = np.abs(np.fft.rfft(ydata))
-			fft1 = (fft1/np.sum(fft1))[1:]
-			x = np.fft.rfftfreq(n,d=delta)[1:]
-			
-			self.curve2_fft.setData(x,fft1, _CallSync='off')
-			
-			power_alpha2 = np.sum(fft1[(x>self.x_low)*(x<self.x_high)])
-			update2 = True
+			if n>=(self.nmax):
+				delta = xdata[1] - xdata[0]
+				fft1 = np.abs(np.fft.rfft(ydata))
+				fft1 = (fft1/np.sum(fft1))[1:]
+				x = np.fft.rfftfreq(n,d=delta)[1:]
+				
+				self.curve2_fft.setData(x,fft1, _CallSync='off')
+				
+				power_alpha2 = np.sum(fft1[(x>self.x_low)*(x<self.x_high)])
+				update2 = True
 		
-		if (update1 and update2):
-			if n>999:
-				#print((power_alpha2 - power_alpha)*self.tuning_factor)
-				self.ball_coordx += (power_alpha2 - power_alpha)*self.tuning_factor
-				self.ball_coordy += np.random.normal(scale=0.05)
+		if (update1 and update2 and self.playing):
+			self.ball_coordx += (power_alpha2 - power_alpha)*self.tuning_factor
+			self.ball_coordy += np.random.normal(scale=0.05)
 
-			#print(self.ball_coordx, self.ball_coordy)
 			self.curve_arena.setData([np.sign(self.ball_coordx)*min(1, abs(self.ball_coordx))], [self.ball_coordy], _CallSync='off')
 
 			if abs(self.ball_coordy)>(0.7*(1.1-abs(self.ball_coordx))):
@@ -424,27 +439,35 @@ class PlottingDataMonitor(QMainWindow):
 		""" Called periodically by the update timer to read data
 			from the serial port.
 		"""
-		#qdata = list(get_all_from_queue(self.data_q))
-		#if len(qdata) > 0:
-			#data = dict(timestamp=qdata[-1][1], 
-						#temperature=decode_output(qdata[-1][0]))
-			#self.livefeed.add_data(data)
-		
-		qdata = list(get_item_from_queue(self.data_q))
-		tstamp = qdata[1]
-		output = decode_output(qdata[0])
-		if len(output) > 0:
-			data = dict(timestamp=tstamp, 
+		qdata = list(get_all_from_queue(self.data_q))
+		if len(qdata) > 0:
+			output = decode_output(qdata[-1][0])
+			data = dict(timestamp=qdata[-1][1], 
 						temperature=float(np.nanmean(output)))
 			self.livefeed.add_data(data)
-			
-		qdata2 = list(get_item_from_queue(self.data2_q))
-		tstamp = qdata2[1]
-		output = decode_output(qdata2[0])
-		if len(output) > 0:
-			data = dict(timestamp=tstamp, 
+		
+		qdata = list(get_all_from_queue(self.data2_q))
+		if len(qdata) > 0:
+			output = decode_output(qdata[-1][0])
+			data = dict(timestamp=qdata[-1][1], 
 						temperature=float(np.nanmean(output)))
 			self.livefeed2.add_data(data)
+		
+		#qdata = list(get_item_from_queue(self.data_q))
+		#tstamp = qdata[1]
+		#output = decode_output(qdata[0])
+		#if len(output) > 0:
+			#data = dict(timestamp=tstamp, 
+						#temperature=float(np.nanmean(output)))
+			#self.livefeed.add_data(data)
+			
+		#qdata2 = list(get_item_from_queue(self.data2_q))
+		#tstamp = qdata2[1]
+		#output = decode_output(qdata2[0])
+		#if len(output) > 0:
+			#data = dict(timestamp=tstamp, 
+						#temperature=float(np.nanmean(output)))
+			#self.livefeed2.add_data(data)
 			
 
 	def add_actions(self, target, actions):
