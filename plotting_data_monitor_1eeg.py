@@ -46,6 +46,7 @@ class PlottingDataMonitor(QMainWindow):
 		self.timer = QTimer()
 		
 		self.create_menu()
+		self.yaxis_low,self.yaxis_high = 400,600#0,1000
 		self.create_main_frame()
 		self.create_status_bar()
 		
@@ -148,7 +149,7 @@ class PlottingDataMonitor(QMainWindow):
 
 		## Plot
 		##
-		self.plot, self.curve = self.create_plot('Time', 'Signal', [0,5], [0,1000])
+		self.plot, self.curve = self.create_plot('Time', 'Signal', [0,5], [self.yaxis_low,self.yaxis_high])
 		self.plot_fft, self.curve_fft = self.create_plot('Frequency', 'FFt', [0,60], [0,.01])
 
 		plot_layout = QVBoxLayout()
@@ -365,7 +366,7 @@ class PlottingDataMonitor(QMainWindow):
 				power_alpha = np.sum(self.fft1_norm[ind_alpha])
 			
 				self.ball_coordx += (power_alpha)*self.tuning_factor
-				self.ball_coordy += np.random.normal(scale=0.05)
+				#self.ball_coordy += np.random.normal(scale=0.05)
 
 				self.curve_arena.setData([np.sign(self.ball_coordx)*min(1, abs(self.ball_coordx))], [self.ball_coordy], _CallSync='off')
 
@@ -380,7 +381,7 @@ class PlottingDataMonitor(QMainWindow):
 					self.show_one_item = True
 					self.playing = False
 					self.on_stop()
-					self.win_hymn_no = np.random.randint(len(sound_files))
+					self.win_hymn_no = 4#np.random.randint(len(sound_files))
 					play_sound(sound_path + sound_files[self.win_hymn_no] + '.wav')
 					
 	
