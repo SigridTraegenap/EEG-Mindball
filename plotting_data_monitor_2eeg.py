@@ -17,6 +17,7 @@ from com_monitor import ComMonitorThread
 from libs.utils import get_all_from_queue, get_item_from_queue
 from libs.decode import decode_output
 from livedatafeed import LiveDataFeed
+from libs.read_audio import play_sound
 
 from scipy.interpolate import interp1d
 from scipy.signal import butter, lfilter
@@ -34,6 +35,8 @@ time_axis_range = 2 ## in s
 pg.setConfigOption('background', 'w')
 pg.setConfigOption('foreground', 'k')
 
+sound_path = '/home/bettina/physics/arduino/eeg_mindball/sound/'
+sound_files = ['End_of_football_game','Football-crowd-GOAL','intro_brass_01','Jingle_Win_00','Jingle_Win_01']
 
 class PlottingDataMonitor(QMainWindow):
 	def __init__(self, parent=None):
@@ -49,6 +52,8 @@ class PlottingDataMonitor(QMainWindow):
 		self.timer = QTimer()
 		
 		self.create_menu()
+		
+		self.yaxis_low,self.yaxis_high = 300,600
 		self.create_main_frame()
 		self.create_status_bar()
 		
@@ -60,14 +65,16 @@ class PlottingDataMonitor(QMainWindow):
 		self.fft1_norm = np.zeros((self.nmax//2))
 		self.b, self.a = butter(3, [0.0, 0.34], btype='band')
 		
+		
 		## init arena stuff
 		self.ball_coordx = 0.
 		self.ball_coordy = 0.
-		self.tuning_factor = 0.1
+		self.tuning_factor = 5.
 		self.text_html = '<div style="text-align: center"><span style="color: #FFF; font-size: 40pt">Goal</span><br><span style="color: #FFF; font-size: 40pt; text-align: center"> {} is winner </span></div>'
 		self.show_one_item = False
 		self.winner_text = None
 		self.playing = False
+		self.win_hymn_no = 2
 	
 	def create_plot(self, xlabel, ylabel, xlim, ylim, ncurves=1):
 		plot = pg.PlotWidget()
@@ -130,7 +137,7 @@ class PlottingDataMonitor(QMainWindow):
 		[14,15],[15,16],[16,17],[18,19],[19,20],[20,21], [10,11],[12,13]])
 
 		#color1, color2 (magenta, green)
-		lines = np.array([(255,255,255,255,1)]*15 + [(255,125,0,255,4),(72,20,204,255,4)],
+		lines = np.array([(255,255,255,255,1)]*15 + [(72,20,204,255,4),(255,125,0,255,4)],
 		dtype=[('red',np.ubyte),('green',np.ubyte),('blue',np.ubyte),('alpha',np.ubyte),('width',float)])
 		central_line.setData(pos=pos,adj=adj,pen=lines,size=0.1)
 
@@ -140,39 +147,105 @@ class PlottingDataMonitor(QMainWindow):
 		self.status_text = QLabel('Monitor idle')
 		self.statusBar().addWidget(self.status_text, 1)
 
+	
+	def SliderValueChanged_fft(self):
+		ymax = self.slider_fft_y.sliderPosition()/1000.
+		self.plot_fft.setYRange(0,ymax)
+	
+	def SliderValueChanged(self):
+		ymax = self.slider_signal_y.sliderPosition()
+		self.plot.setYRange(300,ymax)
+	
 	def create_main_frame(self):
 		# Main frame and layout
 		#
 		self.mdi = QMdiArea()
+		self.setWindowTitle("FIAS - EEG Mind Ball")
 		#self.main_frame = QWidget()
 		#main_layout = QGridLayout()
 		#main_layout.setColumnStretch(0,1)
 
 
-		## Plot
-		##
-		self.plot, self.curve, self.curve2 = self.create_plot('Time', 'Signal', [0,5,1], [300,600,200], ncurves=2)
-		self.plot_fft, self.curve_fft, self.curve2_fft = self.create_plot('Frequency [Hz]', 'Power', [0,40,10], [0,0.02,0.005], ncurves=2)
+		## Plotting
+		## buttons
+		self.button_start = QPushButton('Start', self)
+		self.button_start.clicked.connect(self.on_start)
 		
-		plot_layout = QVBoxLayout()
-		plot_layout.addWidget(self.plot)
-		plot_layout.addWidget(self.plot_fft)
+		self.button_stop = QPushButton('Stop', self)
+		self.button_stop.clicked.connect(self.on_stop)
+		
+		## sliders
+		self.slider_signal_y = QSlider(Qt.Vertical)
+		self.slider_signal_y.setRange(300,1000)
+		self.slider_signal_y.setValue(self.yaxis_high)
+		self.slider_signal_y.setTracking(True)
+		self.slider_signal_y.setTickInterval(50)
+		self.slider_signal_y.setTickPosition(QSlider.TicksRight)
+		self.slider_signal_y.valueChanged.connect(self.SliderValueChanged)
+
+		self.slider_fft_y = QSlider(Qt.Vertical)
+		self.slider_fft_y.setRange(0,20)
+		self.slider_fft_y.setValue(10)
+		self.slider_fft_y.setTracking(True)
+		self.slider_fft_y.setTickInterval(1)
+		self.slider_fft_y.setTickPosition(QSlider.TicksRight)
+		self.slider_fft_y.valueChanged.connect(self.SliderValueChanged_fft)
+		
+		## Plot
+		self.plot, self.curve, self.curve2 = self.create_plot('Time', 'Signal', [0,5,1], [self.yaxis_low,self.yaxis_high,200], ncurves=2)
+		ymax = self.slider_fft_y.sliderPosition()/1000.
+		self.plot_fft, self.curve_fft, self.curve2_fft = self.create_plot('Frequency [Hz]', 'Power', [0,30,10], [0,0.01,0.005], ncurves=2)
+		
+		
+		## layout
+		plot_layout = QGridLayout()#QVBoxLayout()
+		plot_layout.addWidget(self.button_start,0,0,1,1)
+		plot_layout.addWidget(self.button_stop,0,1,1,1)
+		plot_layout.addWidget(self.plot,1,0,2,7)
+		plot_layout.addWidget(self.plot_fft,3,0,2,7)
+		plot_layout.addWidget(self.slider_signal_y,1,7,2,1)
+		plot_layout.addWidget(self.slider_fft_y,3,7,2,1)
 		
 		plot_groupbox = QGroupBox('Signal')
 		plot_groupbox.setLayout(plot_layout)
+		
 		
 		### Arena
 		###
 		self.plot_arena, self.curve_arena = self.create_arenaplot(' ', 'Y', [-1,1,0.2], [-1,1,0.2], curve_style='o')
 		
-		plot_layout_arena = QHBoxLayout()
-		plot_layout_arena.addWidget(self.plot_arena)
+		self.button_play = QPushButton('Play', self)
+		self.button_play.clicked.connect(self.on_arena)
 		
+		self.button_stgm = QPushButton('Stop Game', self)
+		self.button_stgm.clicked.connect(self.on_stop)
+		
+		self.button_3min = QPushButton('3min Game', self)
+		self.button_3min.clicked.connect(self.on_arena)
+		
+		self.button_gold = QPushButton('Golden Goal', self)
+		self.button_gold.clicked.connect(self.on_arena)
+		
+		plot_layout_arena = QGridLayout()#QVBoxLayout()
+		plot_layout_arena.addWidget(self.button_play,0,0)
+		plot_layout_arena.addWidget(self.button_stgm,0,1)
+		plot_layout_arena.addWidget(self.button_3min,0,2)
+		plot_layout_arena.addWidget(self.button_gold,0,3)
+		plot_layout_arena.addWidget(self.plot_arena,1,0,4,6)
+
 		plot_groupbox_arena = QGroupBox('Arena')
 		plot_groupbox_arena.setLayout(plot_layout_arena)
-
+		
+		### Buttons
+		###
+		
+		#layout_buttons = QVBoxLayout(self)
+		#layout_buttons.addWidget(self.button)
+		
+		
 		## Main frame and layout
 		##
+		#self.mdi.addSubWindow(window_buttons)
 		self.mdi.addSubWindow(plot_groupbox)
 		self.mdi.addSubWindow(plot_groupbox_arena)
 		self.setCentralWidget(self.mdi)
@@ -188,12 +261,12 @@ class PlottingDataMonitor(QMainWindow):
 	def create_menu(self):
 		self.file_menu = self.menuBar().addMenu("&File")
 		
-		self.start_action = self.create_action("&Start monitor",
-			shortcut="Ctrl+M", slot=self.on_start, tip="Start the data monitor")
-		self.stop_action = self.create_action("&Stop monitor",
-			shortcut="Ctrl+T", slot=self.on_stop, tip="Stop the data monitor")
+		self.start_action = self.create_action("&Start measurement",
+			shortcut="Ctrl+M", slot=self.on_start, tip="Start displaying data")
+		self.stop_action = self.create_action("&Stop measurement",
+			shortcut="Ctrl+T", slot=self.on_stop, tip="Stop displaying data")
 		self.start_arena_action = self.create_action("&Start arena",
-			shortcut="Ctrl+A", slot=self.on_arena, tip="Start the arena")
+			shortcut="Ctrl+A", slot=self.on_arena, tip="Start the soccer game")
 		self.tiled = self.create_action("&Tile windows",
 			shortcut="Ctrl+R", slot=self.tile_windows, tip="Tile open windows")
 		exit_action = self.create_action("E&xit", slot=self.close, 
@@ -255,6 +328,7 @@ class PlottingDataMonitor(QMainWindow):
 		
 		self.ball_coordx, self.ball_coordy = 0,0
 		self.curve_arena.setData([self.ball_coordx], [self.ball_coordy])
+		self.playing = False
 	
 	def reset_signal(self):
 		""" empty list of signal values"""
@@ -345,6 +419,9 @@ class PlottingDataMonitor(QMainWindow):
 		self.update_monitor()
 	
 	def on_arena(self):
+		if self.monitor_active is False:
+			self.on_start()
+			
 		self.playing = True
 		self.ball_coordx, self.ball_coordy = 0,0
 		self.curve_arena.setData([self.ball_coordx], [self.ball_coordy])
@@ -394,7 +471,7 @@ class PlottingDataMonitor(QMainWindow):
 			self.temperature_samples2 = self.livefeed2.read_list()
 
 			xdata = [s[0] for s in self.temperature_samples2]
-			ydata = [s[1]-200 for s in self.temperature_samples2]
+			ydata = [s[1]-50 for s in self.temperature_samples2]
 			
 			f = interp1d(xdata, ydata)# alternative (slow) choice: kind='cubic'
 			n = len(ydata)
@@ -434,6 +511,8 @@ class PlottingDataMonitor(QMainWindow):
 				self.plot_arena.addItem(self.winner_text)
 				self.show_one_item = True
 				self.on_stop()
+				self.win_hymn_no = np.random.randint(len(sound_files))
+				play_sound(sound_path + sound_files[self.win_hymn_no] + '.wav')
 	
 	def read_serial_data(self):
 		""" Called periodically by the update timer to read data
@@ -497,6 +576,7 @@ class PlottingDataMonitor(QMainWindow):
 
 def main():
 	app = QApplication(sys.argv)
+	app.setStyle('plastique')
 	form = PlottingDataMonitor()
 	form.show()
 	app.exec_()
